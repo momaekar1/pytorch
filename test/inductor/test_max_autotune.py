@@ -2280,11 +2280,7 @@ class TestMaxAutotune(TestCase):
             self.assertEqual(misses(), 4)
 
     @fresh_cache()
-<<<<<<< HEAD
-=======
-    @skipIfXpu
     @skipIfRocm(msg="Fails with Triton 3.7")
->>>>>>> 332bcc31af6e ([release 2.11] Triton Update)
     @unittest.skipIf(
         config.cpp_wrapper, "decompose_k not supported for cpp_wrapper yet"
     )
