@@ -427,6 +427,21 @@ class Shard(torch._C._distributed.Shard):
             unpad_size = full_chunk_size * num_chunks - logical_dim_size  # type: ignore[possibly-undefined]
             local_tensor = unpad_tensor(local_tensor, self.dim, unpad_size)
 
+        # Bind derived symbolic sizes (e.g. 2*(s//2)) back to the original
+        # symbol - needed for correct shape propagation and dynamo generation
+        if local_tensor.size(self.dim) is not logical_dim_size:
+            orig_size = local_tensor.size(self.dim)
+            torch._check(orig_size >= logical_dim_size)
+            local_tensor = local_tensor.narrow(self.dim, 0, logical_dim_size)
+
+            # NOTE: this is a safety check to ensure we aren't introducing
+            # silent incorrectness
+            if local_tensor.size(self.dim) != orig_size:
+                raise RuntimeError(
+                    f"narrow unexpectedly changed concrete size on dim {self.dim}: "
+                    f"{orig_size} -> {local_tensor.size(self.dim)}"
+                )
+
         return local_tensor
 
     def _to_replicate_tensor(
