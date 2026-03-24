@@ -3343,7 +3343,7 @@ class MutationTests(torch._inductor.test_case.TestCase):
             mask = offsets < n_elements
             x = tl.load(in_ptr0 + offsets, mask=mask)
             y = tl.load(in_ptr1 + offsets, mask=mask)
-            output = tl.zeros((n_elements,), dtype=tl.float32)
+            output = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
             for _ in range(4):
                 output += x + y
             tl.store(out_ptr + offsets, output, mask=mask)
@@ -3413,7 +3413,7 @@ class MutationTests(torch._inductor.test_case.TestCase):
             mask = offsets < n_elements
             x = tl.load(in_ptr0 + offsets, mask=mask)
             y = tl.load(in_ptr1 + offsets, mask=mask)
-            output = tl.zeros((n_elements,), dtype=tl.float32)
+            output = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
             for _ in range(2):
                 for _ in range(2):
                     output += x + y
@@ -3449,8 +3449,8 @@ class MutationTests(torch._inductor.test_case.TestCase):
             mask = offsets < n_elements
             x = tl.load(in_ptr0 + offsets, mask=mask)
             y = tl.load(in_ptr1 + offsets, mask=mask)
-            output1 = tl.zeros((n_elements,), dtype=tl.float32)
-            output2 = tl.zeros((n_elements,), dtype=tl.float32)
+            output1 = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
+            output2 = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
             for _ in range(2):
                 for _ in range(2):
                     output1 += y
@@ -4070,6 +4070,9 @@ if HAS_GPU:
         # Poor way to make test names be unique
         while name in MutationTests.__dict__:
             name += "1"
+
+        if kernel.fn.__name__ == "add_kernel_2d_autotuned":
+            fn = unittest.skip("Fails with Triton update")(fn)
 
         setattr(MutationTests, name, fn)
 
