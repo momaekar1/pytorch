@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import itertools
 import platform
 import uuid
 import warnings
@@ -1310,6 +1311,14 @@ SAC_IGNORED_OPS = {
 } | set(torch._subclasses.functional_tensor.FunctionalTensor.metadata_fns)  # type: ignore[has-type]
 
 
+_ac_graph_id_counter = itertools.count(1)
+
+
+def _always_prefer_recompute(ctx, op, *args, **kwargs):
+    return CheckpointPolicy.PREFER_RECOMPUTE
+
+
+
 class _CachingTorchDispatchMode(TorchDispatchMode):
     @classmethod
     def ignore_compile_internals(cls):
@@ -1536,18 +1545,33 @@ def _checkpoint_without_reentrant_generator(
             f"but got {determinism_check}"
         )
 
+    if _is_compiling(fn, args, kwargs):
+        # Under tracing (make_fx or AOT Autograd), skip the checkpoint machinery
+        # (saved_tensor_hooks, rng state save/restore, CheckpointFrame) and just
+        # run the body with the tagging context.  RNG determinism is handled later
+        # by Inductor's replace_random_passes and the partitioner's
+        # run_and_save_rng_state / run_with_rng_state.
+        if context_fn is noop_context_fn:
+            forward_context, _ = create_selective_checkpoint_contexts(
+                _always_prefer_recompute
+            )
+        else:
+            forward_context, _ = context_fn()
+            if not isinstance(forward_context, TorchDispatchMode):
+                raise AssertionError(
+                    "In torch.compile mode, `context_fn` arg passed to `torch.utils.checkpoint` "
+                    "must generate a tuple of two `TorchDispatchMode`s."
+                )
+        # Assign ac_graph_id so the partitioner can distinguish checkpoint regions.
+        if hasattr(forward_context, "ac_graph_id") and forward_context.ac_graph_id is None:
+            forward_context.ac_graph_id = next(_ac_graph_id_counter)
+        with forward_context:
+            yield
+        return
+
     device_type = _infer_device_type(*args)
     device_module = _get_device_module(device_type)
     forward_context, recompute_context = context_fn()
-    if _is_compiling(fn, args, kwargs) and context_fn is not noop_context_fn:
-        if (
-            not isinstance(forward_context, TorchDispatchMode)
-            or not isinstance(recompute_context, TorchDispatchMode)
-        ):
-            raise AssertionError(
-                "In torch.compile mode, `context_fn` arg passed to `torch.utils.checkpoint` "
-                "must generate a tuple of two `TorchDispatchMode`s."
-            )
     # Accommodates the (remote) possibility that autocast is enabled for cpu AND gpu.
     device_autocast_kwargs, cpu_autocast_kwargs = _get_autocast_kwargs(device_type=device_type)
 
