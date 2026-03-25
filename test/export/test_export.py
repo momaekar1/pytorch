@@ -10609,6 +10609,17 @@ def forward(self, p_conv_weight, p_conv_bias, p_conv1d_weight, p_conv1d_bias, c_
         )
         self.assertTrue(torch.allclose(core_aten_ep.module()(*inp), m(*inp)))
 
+    def test_export_decomps_isin_dynamic(self):
+        class Module(torch.nn.Module):
+            def forward(self, x):
+                return torch.isin(x, torch.tensor(0))
+
+        ep = export(Module(), (0,), dynamic_shapes=(Dim.DYNAMIC,))
+        core_aten_ep = ep.run_decompositions()
+        m = core_aten_ep.module()
+        self.assertTrue(m(0))
+        self.assertFalse(m(1))
+
     def test_where_broadcast_preserves_symint(self):
         import torch.fx.experimental._config as config
         from torch._dynamo.source import ConstantSource

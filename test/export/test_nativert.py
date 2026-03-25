@@ -100,6 +100,7 @@ def run_with_nativert(ep):
         torch.export.pt2_archive._package.package_pt2(
             f, exported_programs={MODEL_NAME: ep_infer}
         )
+        f.flush()
         filename = f.name
 
         try:
